@@ -13,6 +13,13 @@ from .models import (
     SupplierPart,
     SupplierPriceBreak,
 )
+from .risk_models import (
+    RiskThreshold,
+    SupplierRiskAssessment,
+    SupplyChainRiskAlert,
+    RiskMitigationStrategy,
+    AlternativeSupplierRecommendation,
+)
 
 
 @admin.register(Company)
@@ -96,3 +103,56 @@ class ContactAdmin(admin.ModelAdmin):
     search_fields = ['company', 'name', 'email']
 
     autocomplete_fields = ['company']
+
+
+@admin.register(RiskThreshold)
+class RiskThresholdAdmin(admin.ModelAdmin):
+    """Admin class for the RiskThreshold model."""
+
+    list_display = ('category', 'low_threshold', 'medium_threshold', 'high_threshold', 'active')
+
+    search_fields = ['category']
+
+
+@admin.register(SupplierRiskAssessment)
+class SupplierRiskAssessmentAdmin(admin.ModelAdmin):
+    """Admin class for the SupplierRiskAssessment model."""
+
+    list_display = ('supplier', 'assessment_date', 'overall_score', 'overall_risk_level')
+
+    search_fields = ['supplier__name', 'notes']
+
+    autocomplete_fields = ['supplier']
+
+
+@admin.register(SupplyChainRiskAlert)
+class SupplyChainRiskAlertAdmin(admin.ModelAdmin):
+    """Admin class for the SupplyChainRiskAlert model."""
+
+    list_display = ('supplier', 'alert_date', 'risk_level', 'alert_type', 'resolved')
+
+    search_fields = ['supplier__name', 'message']
+
+    autocomplete_fields = ['supplier', 'resolved_by']
+
+
+@admin.register(RiskMitigationStrategy)
+class RiskMitigationStrategyAdmin(admin.ModelAdmin):
+    """Admin class for the RiskMitigationStrategy model."""
+
+    list_display = ('supplier', 'strategy_name', 'risk_category', 'effective')
+
+    search_fields = ['supplier__name', 'strategy_name', 'description']
+
+    autocomplete_fields = ['supplier']
+
+
+@admin.register(AlternativeSupplierRecommendation)
+class AlternativeSupplierRecommendationAdmin(admin.ModelAdmin):
+    """Admin class for the AlternativeSupplierRecommendation model."""
+
+    list_display = ('primary_supplier', 'alternative_supplier', 'part', 'priority')
+
+    search_fields = ['primary_supplier__name', 'alternative_supplier__name', 'part__SKU', 'reason']
+
+    autocomplete_fields = ['primary_supplier', 'alternative_supplier', 'part']
