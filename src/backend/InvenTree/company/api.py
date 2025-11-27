@@ -28,6 +28,13 @@ from .models import (
     SupplierPart,
     SupplierPriceBreak,
 )
+from .risk_views import (
+    SupplierRiskViewSet,
+    SupplyChainRiskViewSet,
+    RiskMitigationStrategyViewSet,
+    AlternativeSupplierSuggestionViewSet,
+    RiskEventViewSet,
+)
 from .serializers import (
     AddressSerializer,
     CompanySerializer,
@@ -626,4 +633,59 @@ company_api_urls = [
         ]),
     ),
     path('', CompanyList.as_view(), name='api-company-list'),
+    # Risk Management API endpoints
+    path(
+        'risk/',
+        include([
+            path(
+                'supplier/',
+                include([
+                    path('<int:pk>/', SupplierRiskViewSet.as_view({'get': 'retrieve', 'put': 'update', 'patch': 'partial_update', 'delete': 'destroy'}), name='api-risk-supplier-detail'),
+                    path('<int:pk>/recalculate/', SupplierRiskViewSet.as_view({'post': 'recalculate'}), name='api-risk-supplier-recalculate'),
+                    path('summary/', SupplierRiskViewSet.as_view({'get': 'summary'}), name='api-risk-supplier-summary'),
+                    path('high-risk/', SupplierRiskViewSet.as_view({'get': 'high_risk'}), name='api-risk-supplier-high-risk'),
+                    path('', SupplierRiskViewSet.as_view({'get': 'list', 'post': 'create'}), name='api-risk-supplier-list'),
+                ]),
+            ),
+            path(
+                'supply-chain/',
+                include([
+                    path('<int:pk>/', SupplyChainRiskViewSet.as_view({'get': 'retrieve', 'put': 'update', 'patch': 'partial_update', 'delete': 'destroy'}), name='api-risk-supply-chain-detail'),
+                    path('<int:pk>/recalculate/', SupplyChainRiskViewSet.as_view({'post': 'recalculate'}), name='api-risk-supply-chain-recalculate'),
+                    path('summary/', SupplyChainRiskViewSet.as_view({'get': 'summary'}), name='api-risk-supply-chain-summary'),
+                    path('high-risk/', SupplyChainRiskViewSet.as_view({'get': 'high_risk'}), name='api-risk-supply-chain-high-risk'),
+                    path('single-source/', SupplyChainRiskViewSet.as_view({'get': 'single_source'}), name='api-risk-supply-chain-single-source'),
+                    path('', SupplyChainRiskViewSet.as_view({'get': 'list', 'post': 'create'}), name='api-risk-supply-chain-list'),
+                ]),
+            ),
+            path(
+                'mitigation/',
+                include([
+                    path('<int:pk>/', RiskMitigationStrategyViewSet.as_view({'get': 'retrieve', 'put': 'update', 'patch': 'partial_update', 'delete': 'destroy'}), name='api-risk-mitigation-detail'),
+                    path('implemented/', RiskMitigationStrategyViewSet.as_view({'get': 'implemented'}), name='api-risk-mitigation-implemented'),
+                    path('not-implemented/', RiskMitigationStrategyViewSet.as_view({'get': 'not_implemented'}), name='api-risk-mitigation-not-implemented'),
+                    path('', RiskMitigationStrategyViewSet.as_view({'get': 'list', 'post': 'create'}), name='api-risk-mitigation-list'),
+                ]),
+            ),
+            path(
+                'alternative-suppliers/',
+                include([
+                    path('<int:pk>/', AlternativeSupplierSuggestionViewSet.as_view({'get': 'retrieve', 'put': 'update', 'patch': 'partial_update', 'delete': 'destroy'}), name='api-risk-alternative-detail'),
+                    path('<int:pk>/mark-reviewed/', AlternativeSupplierSuggestionViewSet.as_view({'post': 'mark_reviewed'}), name='api-risk-alternative-mark-reviewed'),
+                    path('unreviewed/', AlternativeSupplierSuggestionViewSet.as_view({'get': 'unreviewed'}), name='api-risk-alternative-unreviewed'),
+                    path('', AlternativeSupplierSuggestionViewSet.as_view({'get': 'list', 'post': 'create'}), name='api-risk-alternative-list'),
+                ]),
+            ),
+            path(
+                'events/',
+                include([
+                    path('<int:pk>/', RiskEventViewSet.as_view({'get': 'retrieve', 'put': 'update', 'patch': 'partial_update', 'delete': 'destroy'}), name='api-risk-event-detail'),
+                    path('<int:pk>/resolve/', RiskEventViewSet.as_view({'post': 'resolve'}), name='api-risk-event-resolve'),
+                    path('unresolved/', RiskEventViewSet.as_view({'get': 'unresolved'}), name='api-risk-event-unresolved'),
+                    path('high-severity/', RiskEventViewSet.as_view({'get': 'high_severity'}), name='api-risk-event-high-severity'),
+                    path('', RiskEventViewSet.as_view({'get': 'list', 'post': 'create'}), name='api-risk-event-list'),
+                ]),
+            ),
+        ]),
+    ),
 ]
