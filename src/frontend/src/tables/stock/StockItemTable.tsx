@@ -155,6 +155,17 @@ function stockItemTableColumns({
           );
         }
 
+        if (record.low_stock) {
+          color = 'red';
+          extra.push(
+            <Text
+              key='low-stock'
+              size='sm'
+              c='red'
+            >{t`Stock is below threshold`}</Text>
+          );
+        }
+
         if (record.in_stock) {
           if (allocated > 0) {
             if (allocated >= quantity) {
