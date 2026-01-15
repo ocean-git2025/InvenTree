@@ -378,6 +378,8 @@ class StockItemSerializer(
             'stale',
             'tracking_items',
             'tags',
+            'threshold',
+            'below_threshold',
             # Detail fields (FK relationships)
             'supplier_part_detail',
             'part_detail',
@@ -631,6 +633,12 @@ class StockItemSerializer(
     stale = serializers.BooleanField(read_only=True, allow_null=True, label=_('Stale'))
     tracking_items = serializers.IntegerField(
         read_only=True, allow_null=True, label=_('Tracking Items')
+    )
+    threshold = InvenTreeDecimalField(
+        read_only=True, allow_null=True, label=_('Stock Threshold')
+    )
+    below_threshold = serializers.BooleanField(
+        read_only=True, allow_null=True, label=_('Below Threshold')
     )
 
     purchase_price = InvenTree.serializers.InvenTreeMoneySerializer(
