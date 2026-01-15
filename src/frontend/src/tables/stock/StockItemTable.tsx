@@ -201,6 +201,18 @@ function stockItemTableColumns({
               >{t`This stock item has been depleted`}</Text>
             );
           }
+
+          // Check if stock is below threshold
+          if (record.below_threshold) {
+            color = 'red';
+            extra.push(
+              <Text
+                key='below-threshold'
+                size='sm'
+                c='red'
+              >{t`Stock is below threshold (${record.threshold || 0})`}</Text>
+            );
+          }
         }
 
         if (!record.in_stock) {
