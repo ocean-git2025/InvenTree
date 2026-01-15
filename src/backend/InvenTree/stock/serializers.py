@@ -541,6 +541,20 @@ class StockItemSerializer(
         # Annotate with the total number of "child items" (split stock items)
         queryset = queryset.annotate(child_items=SubqueryCount('children'))
 
+        # Add flag to indicate if the StockItem is below stock threshold
+        # This checks if quantity < custom_data['stock_threshold'] (defaults to 5 if not set)
+        from django.db.models import F
+        queryset = queryset.annotate(
+            low_stock=Case(
+                When(
+                    custom_data__has_key='stock_threshold',
+                    quantity__lt=F('custom_data__stock_threshold'),
+                    then=Value(True, output_field=BooleanField()),
+                ),
+                default=Value(False, output_field=BooleanField()),
+            )
+        )
+
         return queryset
 
     status_text = serializers.CharField(
@@ -629,6 +643,7 @@ class StockItemSerializer(
         read_only=True, allow_null=True, label=_('Child Items')
     )
     stale = serializers.BooleanField(read_only=True, allow_null=True, label=_('Stale'))
+    low_stock = serializers.BooleanField(read_only=True, allow_null=True, label=_('Low Stock'))
     tracking_items = serializers.IntegerField(
         read_only=True, allow_null=True, label=_('Tracking Items')
     )
