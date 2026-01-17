@@ -661,7 +661,35 @@ export default function StockDetail() {
     title: t`Edit Stock Item`,
     modalId: 'edit-stock-item',
     fields: editStockItemFields,
-    onFormSuccess: refreshInstance
+    onFormSuccess: async (data) => {
+      try {
+        // Refresh instance and wait for it to complete
+        await refreshInstancePromise();
+        
+        // Verify the refresh was successful by checking if data matches
+        if (instanceQuery.data) {
+          notifications.show({
+            title: t`Stock Item Updated`,
+            message: t`Stock item details have been updated successfully`,
+            color: 'green'
+          });
+        } else {
+          // Data not refreshed after API success
+          notifications.show({
+            title: t`Update Warning`,
+            message: t`Stock item updated but data refresh failed. Please refresh the page.`,
+            color: 'orange'
+          });
+        }
+      } catch (error) {
+        // Handle refresh failure
+        notifications.show({
+          title: t`Update Warning`,
+          message: t`Stock item updated but data refresh failed. Please refresh the page.`,
+          color: 'orange'
+        });
+      }
+    }
   });
 
   const duplicateStockItemFields = useStockFields({

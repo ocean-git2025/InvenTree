@@ -14,9 +14,11 @@ from django.db import models, transaction
 from django.db.models import Q, QuerySet, Sum
 from django.db.models.functions import Coalesce
 from django.db.models.signals import post_delete, post_save
+from django.db.models.signals import m2m_changed
 from django.db.utils import IntegrityError, OperationalError
 from django.dispatch import receiver
 from django.urls import reverse
+from django.core.cache import cache
 from django.utils.translation import gettext_lazy as _
 
 import structlog
@@ -54,6 +56,36 @@ from stock.generators import generate_batch_code
 from users.models import Owner
 
 logger = structlog.get_logger('inventree')
+
+@receiver(post_save, sender=StockItem)
+def stock_item_quantity_changed(sender, instance, created, **kwargs):
+    """Signal handler to update associated sales order allocations when stock quantity changes."""
+    if not created:
+        # Check if this is a bulk operation - skip signal handler
+        if kwargs.get('raw') or kwargs.get('bulk'):
+            return
+        
+        # Get the previous quantity from cache
+        cache_key = f'stockitem_quantity_{instance.pk}'
+        previous_quantity = cache.get(cache_key)
+        
+        # Cache the new quantity for next comparison
+        cache.set(cache_key, instance.quantity, timeout=60)  # Cache for 60 seconds
+        
+        # If no previous quantity in cache (first save), skip
+        if previous_quantity is None:
+            return
+        
+        # If quantity changed, update sales order allocations
+        if previous_quantity != instance.quantity:
+            # Get all sales order allocations for this stock item
+            allocations = instance.sales_order_allocations.all()
+            
+            # Only update if there are allocations
+            if allocations.exists():
+                # Use bulk update for better performance
+                for allocation in allocations:
+                    allocation.save(update_fields=['allocated', 'updated_at'])  # Update only necessary fields
 
 
 class StockLocationType(InvenTree.models.MetadataMixin, models.Model):
@@ -801,6 +833,38 @@ class StockItem(
                 # Status changed?
                 if old.status != self.status:
                     deltas['status'] = self.status
+
+                # Quantity changed?
+                if old.quantity != self.quantity:
+                    deltas['quantity'] = {
+                        'old': float(old.quantity),
+                        'new': float(self.quantity),
+                    }
+
+                    # If quantity decreased, we need to check sales order allocations
+                    if self.quantity < old.quantity:
+                        from order.models import SalesOrderAllocation
+                        
+                        # Get all active sales order allocations for this stock item
+                        allocations = self.sales_order_allocations.filter(
+                            line__order__status__in=['PO', 'SO', 'PR', 'RC']
+                        )
+                        
+                        # Calculate the quantity difference
+                        quantity_reduction = old.quantity - self.quantity
+                        
+                        # Reduce allocations to match the new quantity
+                        for allocation in allocations:
+                            if quantity_reduction <= 0:
+                                break
+                            
+                            if allocation.quantity > quantity_reduction:
+                                allocation.quantity -= quantity_reduction
+                                allocation.save()
+                                quantity_reduction = 0
+                            else:
+                                quantity_reduction -= allocation.quantity
+                                allocation.delete()
 
                 if add_note and len(deltas) > 0:
                     self.add_tracking_entry(
