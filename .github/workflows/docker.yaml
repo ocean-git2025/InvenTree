@@ -20,9 +20,11 @@ on:
   push:
     branches:
       - "master"
+      - "stable"
   pull_request:
     branches:
       - "master"
+      - "stable"
 
 permissions:
   contents: read
@@ -52,6 +54,8 @@ jobs:
               - src/backend/InvenTree/InvenTree/settings.py
               - src/backend/requirements.txt
               - tasks.py
+              - src/backend/InvenTree/stock/models.py
+              - src/backend/InvenTree/stock/test_api.py
 
   # Build the docker image
   build:
@@ -114,6 +118,10 @@ jobs:
         run: |
           echo "GITHUB_TOKEN=${{ secrets.GITHUB_TOKEN }}" >> contrib/container/docker.dev.env
           docker compose --project-directory . -f contrib/container/dev-docker-compose.yml run --rm inventree-dev-server invoke dev.test --disable-pty --translations
+      - name: Run Stock Allocation Sync Tests
+        run: |
+          echo "GITHUB_TOKEN=${{ secrets.GITHUB_TOKEN }}" >> contrib/container/docker.dev.env
+          docker compose --project-directory . -f contrib/container/dev-docker-compose.yml run --rm inventree-dev-server invoke dev.test --disable-pty --runtest=stock.test_api.StockItemAllocationSyncTest
 
   # Run migration test
   migration_test:

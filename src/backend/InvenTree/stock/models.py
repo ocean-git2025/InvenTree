@@ -787,6 +787,8 @@ class StockItem(
 
         notes = kwargs.pop('notes', '')
 
+        old_quantity = None
+
         if self.pk:
             # StockItem has already been saved
 
@@ -796,11 +798,17 @@ class StockItem(
             try:
                 old = StockItem.objects.get(pk=self.pk)
 
+                old_quantity = old.quantity
+
                 deltas = {}
 
                 # Status changed?
                 if old.status != self.status:
                     deltas['status'] = self.status
+
+                # Quantity changed?
+                if old.quantity != self.quantity:
+                    deltas['quantity'] = self.quantity
 
                 if add_note and len(deltas) > 0:
                     self.add_tracking_entry(
@@ -824,6 +832,10 @@ class StockItem(
                 location=self.location,
                 quantity=float(self.quantity),
             )
+
+        # Update related sales order allocations when quantity changes
+        if old_quantity is not None and old_quantity != self.quantity:
+            self._update_sales_order_allocations(old_quantity)
 
     @property
     def status_label(self):
@@ -1536,6 +1548,63 @@ class StockItem(
             total = Decimal(0)
 
         return total
+
+    def _update_sales_order_allocations(self, old_quantity):
+        """Update related sales order allocations when stock quantity changes.
+
+        When a StockItem's quantity is modified, we need to ensure that
+        any associated sales order allocations are still valid.
+        If the new quantity is less than the allocated quantity, we need to
+        reduce or remove allocations accordingly.
+
+        Args:
+            old_quantity: The previous quantity value before the change
+        """
+        from order.models import SalesOrderAllocation
+
+        new_quantity = self.quantity
+
+        if new_quantity >= old_quantity:
+            # Quantity increased, no need to adjust allocations
+            return
+
+        # Get all active allocations for this stock item
+        allocations = SalesOrderAllocation.objects.filter(item=self).select_related(
+            'line', 'line__order'
+        )
+
+        if not allocations.exists():
+            return
+
+        # Calculate total allocated quantity
+        total_allocated = sum(alloc.quantity for alloc in allocations)
+
+        if total_allocated <= new_quantity:
+            # Allocations are still valid, no changes needed
+            return
+
+        # We need to reduce allocations to fit within the new quantity
+        remaining_quantity = new_quantity
+
+        for allocation in allocations:
+            if remaining_quantity <= 0:
+                # Delete remaining allocations
+                allocation.delete()
+            elif allocation.quantity > remaining_quantity:
+                # Reduce allocation quantity
+                allocation.quantity = remaining_quantity
+                allocation.save()
+                remaining_quantity = 0
+            else:
+                # Allocation fits within remaining quantity
+                remaining_quantity -= allocation.quantity
+
+        logger.info(
+            'Updated sales order allocations for StockItem %s: quantity changed from %s to %s',
+            self.pk,
+            old_quantity,
+            new_quantity,
+        )
 
     def allocation_count(self):
         """Return the total quantity allocated to builds or orders."""
