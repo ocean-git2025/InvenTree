@@ -159,6 +159,229 @@ curl http://localhost:8000/api/plugin/stockthreshold/
 
 返回所有设置了阈值的库存项目及其阈值信息。
 
+## 环境异常快速修复方案
+
+### 🔧 启动前环境检查（推荐）
+
+在启动服务前，建议先运行环境检查：
+
+```powershell
+# 检查 Python 版本
+python --version
+
+# 检查 pip 版本
+pip --version
+
+# 检查 PowerShell 版本
+$PSVersionTable.PSVersion
+```
+
+**推荐版本**：
+- Python: 3.8.0 或更高
+- PowerShell: 5.1 或更高
+
+---
+
+### 🚨 快速修复清单
+
+#### 1. Python 版本过低
+
+**错误表现**：脚本提示 "Python 版本过低"
+
+**修复方法**：
+```powershell
+# 方案1：使用 pyenv 管理版本（推荐）
+# 安装 pyenv 后
+pyenv install 3.10.0
+pyenv global 3.10.0
+
+# 方案2：从官网下载安装最新版本
+# https://www.python.org/downloads/
+
+# 验证
+python --version
+```
+
+#### 2. pip 命令不可用
+
+**错误表现**："pip : 无法将 'pip' 项识别为 cmdlet、函数、脚本文件或可运行程序的名称"
+
+**修复方法**：
+```powershell
+# 方案1：使用 python -m pip
+python -m pip --version
+
+# 方案2：添加 Python 到 PATH
+# Python 安装时勾选 "Add Python to PATH"
+# 或手动添加：C:\Users\<用户名>\AppData\Local\Programs\Python\Python310\Scripts
+
+# 方案3：重新安装 pip
+python -m ensurepip --upgrade
+```
+
+#### 3. 依赖安装失败
+
+**错误表现**：pip install 报错，常见于网络问题或依赖冲突
+
+**修复方法**：
+```powershell
+# 方案1：使用国内镜像源
+pip install -r ../requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple/
+
+# 方案2：升级 pip 后重试
+python -m pip install --upgrade pip
+pip install -r ../requirements.txt
+
+# 方案3：使用虚拟环境
+python -m venv .venv
+.venv\Scripts\Activate.ps1
+pip install -r ../requirements.txt
+```
+
+#### 4. 数据库迁移错误
+
+**错误表现**："No changes detected" 或数据库连接失败
+
+**修复方法**：
+```powershell
+# 方案1：清理迁移文件并重新生成
+# 注意：这会删除所有迁移历史
+cd InvenTree\stock\migrations
+Remove-Item -Path "0*.py" -Exclude "__init__.py"
+cd ..\..
+python manage.py makemigrations
+python manage.py migrate
+
+# 方案2：重置数据库（危险！会删除所有数据）
+python manage.py flush
+python manage.py migrate
+python manage.py createsuperuser
+
+# 方案3：检查数据库配置
+# 编辑 InvenTree/settings.py
+# 确认 DATABASES 配置正确
+```
+
+#### 5. 端口被占用
+
+**错误表现**："Error: That port is already in use"
+
+**修复方法**：
+```powershell
+# 方案1：查找并终止占用端口的进程
+netstat -ano | findstr :8000
+# 记下 PID，例如 1234
+Stop-Process -Id 1234 -Force
+
+# 方案2：使用其他端口
+..\quick_start.ps1 -Port 8080
+
+# 方案3：修改默认端口
+# 在脚本中修改 Port 参数默认值
+```
+
+#### 6. Django 导入错误
+
+**错误表现**："ModuleNotFoundError: No module named 'django'"
+
+**修复方法**：
+```powershell
+# 方案1：重新安装依赖
+pip install -r ../requirements.txt --force-reinstall
+
+# 方案2：单独安装 Django
+pip install django>=4.2.0
+
+# 验证
+python -c "import django; print(django.get_version())"
+```
+
+#### 7. 环境变量问题
+
+**错误表现**：找不到 Python 或其他命令
+
+**修复方法**：
+```powershell
+# 检查 PATH 环境变量
+$env:Path -split ';'
+
+# 添加 Python 到临时 PATH
+$env:Path += ";C:\Users\<用户名>\AppData\Local\Programs\Python\Python310"
+$env:Path += ";C:\Users\<用户名>\AppData\Local\Programs\Python\Python310\Scripts"
+
+# 永久添加（需要管理员权限）
+[Environment]::SetEnvironmentVariable('Path', $env:Path + ";C:\PythonPath", 'User')
+```
+
+#### 8. 文件权限问题
+
+**错误表现**："Permission denied" 或无法写入文件
+
+**修复方法**：
+```powershell
+# 方案1：以管理员身份运行 PowerShell
+# 右键点击 PowerShell > 以管理员身份运行
+
+# 方案2：修改文件夹权限
+icacls . /grant Users:F /T
+
+# 方案3：检查是否有文件被占用
+# 关闭所有可能占用文件的程序（IDE、编辑器等）
+```
+
+#### 9. 虚拟环境问题
+
+**错误表现**：虚拟环境激活失败或依赖安装到全局
+
+**修复方法**：
+```powershell
+# 创建新的虚拟环境
+python -m venv .venv
+
+# 激活虚拟环境
+.venv\Scripts\Activate.ps1
+
+# 确认已激活（命令行前应显示 (.venv)）
+
+# 安装依赖
+pip install -r ../requirements.txt
+
+# 退出虚拟环境
+Deactivate
+```
+
+#### 10. PowerShell 执行策略限制
+
+**错误表现**："无法加载文件 xxx.ps1，因为在此系统上禁止运行脚本"
+
+**修复方法**：
+```powershell
+# 查看当前执行策略
+Get-ExecutionPolicy
+
+# 设置执行策略（需要管理员权限）
+Set-ExecutionPolicy RemoteSigned
+
+# 或仅为当前用户设置
+Set-ExecutionPolicy RemoteSigned -Scope CurrentUser
+
+# 验证
+Get-ExecutionPolicy -List
+```
+
+---
+
+### ⚡ 一键修复脚本
+
+已创建增强版启动脚本，包含自动环境检查和修复提示：
+
+- `start_backend.ps1`：详细版本，支持参数选项，包含完整的版本检查
+- `quick_start.ps1`：快速版本，单命令执行，包含基础环境检查
+
+直接运行即可，脚本会自动检测问题并给出修复建议！
+
+---
+
 ## 常见问题排查
 
 ### 问题1：红色警示标记不显示
