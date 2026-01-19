@@ -377,6 +377,7 @@ class StockItemSerializer(
             'location_path',
             'stale',
             'tracking_items',
+            'low_stock',
             'tags',
             # Detail fields (FK relationships)
             'supplier_part_detail',
@@ -632,6 +633,12 @@ class StockItemSerializer(
     tracking_items = serializers.IntegerField(
         read_only=True, allow_null=True, label=_('Tracking Items')
     )
+    low_stock = serializers.SerializerMethodField(
+        read_only=True,
+        allow_null=True,
+        label=_('Low Stock'),
+        help_text=_('True if stock quantity is below threshold')
+    )
 
     purchase_price = InvenTree.serializers.InvenTreeMoneySerializer(
         label=_('Purchase Price'),
@@ -652,6 +659,10 @@ class StockItemSerializer(
     )
 
     tags = common.filters.enable_tags_filter()
+
+    def get_low_stock(self, obj):
+        """Get low stock status for a stock item."""
+        return obj.get_metadata('low_stock', False)
 
 
 class SerializeStockItemSerializer(serializers.Serializer):
