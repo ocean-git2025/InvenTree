@@ -1,0 +1,69 @@
+# Test stock allocation sync changes
+# This workflow tests the stock allocation sync functionality
+
+name: Stock Allocation Sync Test
+
+on:
+  push:
+    branches:
+      - "**"
+  pull_request:
+    branches:
+      - "master"
+      - "stable"
+
+permissions:
+  contents: read
+
+jobs:
+  test-stock-allocation:
+    name: Test Stock Allocation Sync
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8
+        with:
+          persist-credentials: false
+      
+      - name: Set Up Python 3.11
+        uses: actions/setup-python@83679a892e2d95755f2dac6acb0bfd1e9ac5d548
+        with:
+          python-version: "3.11"
+      
+      - name: Cache pip packages
+        uses: actions/cache@ab5e6d0c87105b4c9c20a1e3f65ef9e6317bd6b # pin@v4.2.0
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
+      
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r src/backend/requirements.txt
+          pip install pytest pytest-django pytest-cov
+      
+      - name: Run stock allocation sync tests
+        run: |
+          cd src/backend/InvenTree
+          python -m pytest stock/test_api.py::StockItemAllocationSyncTest -v --tb=short
+        env:
+          DJANGO_SETTINGS_MODULE: InvenTree.settings
+      
+      - name: Run custom test script
+        run: |
+          python test_stock_allocation_fix.py
+        env:
+          DJANGO_SETTINGS_MODULE: InvenTree.settings
+      
+      - name: Upload coverage reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-reports
+          path: |
+            htmlcov/
+            coverage.xml
+          retention-days: 30

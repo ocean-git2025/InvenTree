@@ -661,7 +661,11 @@ export default function StockDetail() {
     title: t`Edit Stock Item`,
     modalId: 'edit-stock-item',
     fields: editStockItemFields,
-    onFormSuccess: refreshInstance
+    onFormSuccess: async (data, form) => {
+      // Wait for refresh to complete before closing modal
+      await refreshInstancePromise();
+    },
+    checkClose: () => false // Prevent auto-close, we'll handle it in onFormSuccess
   });
 
   const duplicateStockItemFields = useStockFields({

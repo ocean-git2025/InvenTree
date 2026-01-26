@@ -2651,3 +2651,140 @@ class StockApiPerformanceTest(StockAPITestCase, InvenTreeAPIPerformanceTestCase)
         url = reverse('api-stock-list')
         response = self.get(url, expected_code=200)
         self.assertGreater(len(response.data), 13)
+
+
+class StockItemAllocationSyncTest(StockAPITestCase):
+    """Test that stock item quantity changes sync with sales order allocations."""
+
+    def setUp(self):
+        """Setup for allocation sync tests."""
+        super().setUp()
+        # Create a stock item with quantity
+        self.stock_item = StockItem.objects.create(
+            part=part.models.Part.objects.get(pk=1),
+            quantity=100,
+            location=StockLocation.objects.get(pk=1)
+        )
+
+    def test_quantity_decrease_updates_allocations(self):
+        """Test that decreasing stock quantity updates allocations."""
+        from order.models import SalesOrder, SalesOrderLineItem, SalesOrderAllocation, SalesOrderShipment
+
+        # Create a sales order with line item
+        sales_order = SalesOrder.objects.create(
+            customer=company.models.Company.objects.get(pk=1),
+            reference='SO-001',
+            status=10
+        )
+
+        line_item = SalesOrderLineItem.objects.create(
+            order=sales_order,
+            part=part.models.Part.objects.get(pk=1),
+            quantity=50
+        )
+
+        # Create allocation
+        allocation = SalesOrderAllocation.objects.create(
+            line=line_item,
+            item=self.stock_item,
+            quantity=30
+        )
+
+        # Verify initial state
+        self.assertEqual(allocation.quantity, 30)
+        self.assertEqual(self.stock_item.quantity, 100)
+
+        # Decrease stock quantity below allocated amount
+        self.stock_item.quantity = 25
+        self.stock_item.save()
+
+        # Refresh allocation from database
+        allocation.refresh_from_db()
+
+        # Allocation should be reduced to fit within new quantity
+        self.assertEqual(allocation.quantity, 25)
+
+    def test_quantity_increase_no_allocation_change(self):
+        """Test that increasing stock quantity doesn't change allocations."""
+        from order.models import SalesOrder, SalesOrderLineItem, SalesOrderAllocation
+
+        # Create a sales order with line item
+        sales_order = SalesOrder.objects.create(
+            customer=company.models.Company.objects.get(pk=1),
+            reference='SO-002',
+            status=10
+        )
+
+        line_item = SalesOrderLineItem.objects.create(
+            order=sales_order,
+            part=part.models.Part.objects.get(pk=1),
+            quantity=50
+        )
+
+        # Create allocation
+        allocation = SalesOrderAllocation.objects.create(
+            line=line_item,
+            item=self.stock_item,
+            quantity=30
+        )
+
+        # Verify initial state
+        self.assertEqual(allocation.quantity, 30)
+        self.assertEqual(self.stock_item.quantity, 100)
+
+        # Increase stock quantity
+        self.stock_item.quantity = 150
+        self.stock_item.save()
+
+        # Refresh allocation from database
+        allocation.refresh_from_db()
+
+        # Allocation should remain unchanged
+        self.assertEqual(allocation.quantity, 30)
+
+    def test_quantity_decrease_removes_excess_allocations(self):
+        """Test that decreasing stock quantity removes excess allocations."""
+        from order.models import SalesOrder, SalesOrderLineItem, SalesOrderAllocation
+
+        # Create a sales order with line item
+        sales_order = SalesOrder.objects.create(
+            customer=company.models.Company.objects.get(pk=1),
+            reference='SO-003',
+            status=10
+        )
+
+        line_item = SalesOrderLineItem.objects.create(
+            order=sales_order,
+            part=part.models.Part.objects.get(pk=1),
+            quantity=50
+        )
+
+        # Create multiple allocations
+        allocation1 = SalesOrderAllocation.objects.create(
+            line=line_item,
+            item=self.stock_item,
+            quantity=40
+        )
+
+        allocation2 = SalesOrderAllocation.objects.create(
+            line=line_item,
+            item=self.stock_item,
+            quantity=40
+        )
+
+        # Verify initial state
+        self.assertEqual(allocation1.quantity, 40)
+        self.assertEqual(allocation2.quantity, 40)
+        self.assertEqual(self.stock_item.quantity, 100)
+
+        # Decrease stock quantity significantly
+        self.stock_item.quantity = 30
+        self.stock_item.save()
+
+        # Refresh allocations from database
+        allocation1.refresh_from_db()
+        allocation2.refresh_from_db()
+
+        # First allocation should be reduced, second should be deleted
+        self.assertEqual(allocation1.quantity, 30)
+        self.assertFalse(SalesOrderAllocation.objects.filter(pk=allocation2.pk).exists())

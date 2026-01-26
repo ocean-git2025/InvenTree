@@ -447,7 +447,7 @@ export function ApiForm({
         'Content-Type': hasFiles ? 'multipart/form-data' : 'application/json'
       }
     })
-      .then((response) => {
+      .then(async (response) => {
         switch (response.status) {
           case 200:
           case 201:
@@ -455,8 +455,8 @@ export function ApiForm({
             // Form was submitted successfully
 
             if (props.onFormSuccess) {
-              // A custom callback hook is provided
-              props.onFormSuccess(response.data, form);
+              // A custom callback hook is provided - support async callbacks
+              await props.onFormSuccess(response.data, form);
             }
 
             if (props.follow && props.modelType && response.data?.pk) {
