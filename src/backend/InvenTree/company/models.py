@@ -30,6 +30,12 @@ from common.currency import currency_code_default
 from InvenTree.fields import InvenTreeURLField, RoundingDecimalField
 from order.status_codes import PurchaseOrderStatusGroups
 
+# Import risk models
+from .risk_models import (
+    SupplierRisk, SupplyChainRisk, RiskMitigationStrategy,
+    AlternativeSupplierSuggestion, RiskEvent, RiskLevel, RiskCategory
+)
+
 
 def rename_company_image(instance, filename):
     """Function to rename a company image after upload.
@@ -268,6 +274,17 @@ class Company(
     def get_absolute_url(self):
         """Get the web URL for the detail view for this Company."""
         return InvenTree.helpers.pui_url(f'/purchasing/manufacturer/{self.id}')
+    
+    @property
+    def risk_assessment(self):
+        """Get or create risk assessment for this company"""
+        from .risk_models import SupplierRisk
+        
+        if not self.is_supplier:
+            return None
+        
+        risk, created = SupplierRisk.objects.get_or_create(supplier=self)
+        return risk
 
     @property
     def parts(self):
