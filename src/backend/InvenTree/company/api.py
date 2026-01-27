@@ -27,6 +27,18 @@ from .models import (
     SupplierPart,
     SupplierPriceBreak,
 )
+from .risk_views import (
+    RiskThresholdList,
+    RiskThresholdDetail,
+    SupplierRiskAssessmentList,
+    SupplierRiskAssessmentDetail,
+    SupplyChainRiskAlertList,
+    SupplyChainRiskAlertDetail,
+    RiskMitigationStrategyList,
+    RiskMitigationStrategyDetail,
+    AlternativeSupplierRecommendationList,
+    AlternativeSupplierRecommendationDetail,
+)
 from .serializers import (
     AddressSerializer,
     CompanySerializer,
@@ -553,4 +565,50 @@ company_api_urls = [
         ]),
     ),
     path('', CompanyList.as_view(), name='api-company-list'),
+    # Risk Management API Endpoints
+    path(
+        'risk/',
+        include([
+            # Risk Thresholds
+            path(
+                'threshold/',
+                include([
+                    path('<int:pk>/', RiskThresholdDetail.as_view(), name='api-risk-threshold-detail'),
+                    path('', RiskThresholdList.as_view(), name='api-risk-threshold-list'),
+                ]),
+            ),
+            # Supplier Risk Assessments
+            path(
+                'assessment/',
+                include([
+                    path('<int:pk>/', SupplierRiskAssessmentDetail.as_view(), name='api-risk-assessment-detail'),
+                    path('', SupplierRiskAssessmentList.as_view(), name='api-risk-assessment-list'),
+                ]),
+            ),
+            # Supply Chain Risk Alerts
+            path(
+                'alert/',
+                include([
+                    path('<int:pk>/', SupplyChainRiskAlertDetail.as_view(), name='api-risk-alert-detail'),
+                    path('', SupplyChainRiskAlertList.as_view(), name='api-risk-alert-list'),
+                ]),
+            ),
+            # Risk Mitigation Strategies
+            path(
+                'strategy/',
+                include([
+                    path('<int:pk>/', RiskMitigationStrategyDetail.as_view(), name='api-risk-strategy-detail'),
+                    path('', RiskMitigationStrategyList.as_view(), name='api-risk-strategy-list'),
+                ]),
+            ),
+            # Alternative Supplier Recommendations
+            path(
+                'alternative/',
+                include([
+                    path('<int:pk>/', AlternativeSupplierRecommendationDetail.as_view(), name='api-risk-alternative-detail'),
+                    path('', AlternativeSupplierRecommendationList.as_view(), name='api-risk-alternative-list'),
+                ]),
+            ),
+        ]),
+    ),
 ]
