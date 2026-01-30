@@ -193,6 +193,16 @@ function stockItemTableColumns({
             }
           }
 
+          const min_stock = part?.minimum_stock ?? 0;
+          if (min_stock > 0 && quantity <= min_stock) {
+            color = 'red';
+            extra.push(
+              <Text key='min-stock' size='sm' c='red'>
+                {`${t`Minimum stock`}: ${formatDecimal(min_stock)}`}
+              </Text>
+            );
+          }
+
           if (quantity <= 0) {
             extra.push(
               <Text

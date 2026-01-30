@@ -1,0 +1,131 @@
+name: Plugin Test
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  test-plugin:
+    name: Test Plugin with InvenTree Docker
+    runs-on: ubuntu-latest
+    
+    strategy:
+      matrix:
+        inventree-version: ['stable', 'latest']
+    
+    services:
+      inventree:
+        image: inventree/inventree:${{ matrix.inventree-version }}
+        env:
+          INVENTREE_DB_ENGINE: sqlite3
+          INVENTREE_DB_NAME: /home/inventree/data/inventree_db.sqlite3
+          INVENTREE_DEBUG: true
+          INVENTREE_SECRET_KEY: ${{ secrets.INVENTREE_SECRET_KEY || 'test-secret-key-12345' }}
+          INVENTREE_PLUGINS_ENABLED: true
+        ports:
+          - 8000:8000
+        options: >-
+          --health-cmd "curl -f http://localhost:8000/api/health/"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - name: Checkout Plugin Code
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Wait for InvenTree to be ready
+        run: |
+          echo "Waiting for InvenTree server to be ready..."
+          for i in {1..30}; do
+            if curl -s http://localhost:8000/api/health/ > /dev/null 2>&1; then
+              echo "InvenTree is ready!"
+              break
+            fi
+            echo "Attempt $i: InvenTree not ready yet, waiting..."
+            sleep 5
+          done
+
+      - name: Install Plugin Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e .
+
+      - name: Run Plugin Tests
+        run: |
+          pip install pytest pytest-django
+          if [ -d "tests" ]; then
+            pytest tests/ -v
+          else
+            echo "No tests directory found, skipping tests"
+          fi
+
+      - name: Check Plugin Installation
+        run: |
+          python -c "
+          import sys
+          sys.path.insert(0, '.')
+          try:
+              from stock_threshold_alert import StockThresholdPlugin
+              print('Plugin import: SUCCESS')
+              print(f'Plugin Name: {StockThresholdPlugin.NAME}')
+              print(f'Plugin Slug: {StockThresholdPlugin.SLUG}')
+              print(f'Plugin Version: {StockThresholdPlugin.VERSION}')
+          except ImportError as e:
+              print(f'Plugin import: FAILED - {e}')
+              sys.exit(1)
+          "
+
+      - name: Build Plugin Package
+        run: |
+          pip install build
+          python -m build
+          ls -la dist/
+
+      - name: Upload Build Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: plugin-package-${{ matrix.inventree-version }}
+          path: dist/
+          retention-days: 7
+
+  lint:
+    name: Code Quality Checks
+    runs-on: ubuntu-latest
+    
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          pip install flake8 black isort
+
+      - name: Run Flake8
+        run: |
+          flake8 stock_threshold_alert/ --max-line-length=127 --exclude=static/
+
+      - name: Check Black formatting
+        run: |
+          black --check --diff stock_threshold_alert/ --exclude=static/
+
+      - name: Check isort
+        run: |
+          isort --check-only --diff stock_threshold_alert/ --skip=static/
