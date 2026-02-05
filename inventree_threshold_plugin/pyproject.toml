@@ -1,0 +1,41 @@
+[build-system]
+requires = ["setuptools>=45", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "inventree-threshold-plugin"
+version = "1.0.0"
+description = "InvenTree plugin for stock threshold warnings"
+readme = "README.md"
+license = {text = "MIT"}
+authors = [
+    {name = "InvenTree Community"}
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Framework :: Django",
+    "Intended Audience :: Manufacturing",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+]
+requires-python = ">=3.9"
+dependencies = [
+    "Django>=4.2.0",
+    "djangorestframework>=3.14.0",
+]
+
+[project.entry-points."inventree_plugins"]
+StockThresholdPlugin = "inventree_threshold_plugin.plugin:StockThresholdPlugin"
+
+[tool.setuptools.packages.find]
+exclude = ["tests", "tests.*"]
+
+[tool.setuptools.package-data]
+inventree_threshold_plugin = [
+    "static/**/*",
+    "migrations/**/*",
+]

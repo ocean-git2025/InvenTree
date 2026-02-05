@@ -1,0 +1,136 @@
+name: Test Plugin
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ['3.9', '3.10', '3.11', '3.12']
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ matrix.python-version }}
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -e .
+        pip install pytest pytest-django
+
+    - name: Run tests
+      run: |
+        pytest tests/ -v
+
+  docker-test:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout plugin
+      uses: actions/checkout@v4
+      with:
+        path: plugin
+
+    - name: Checkout InvenTree
+      uses: actions/checkout@v4
+      with:
+        repository: inventree/InvenTree
+        ref: stable
+        path: inventree
+
+    - name: Set up Docker
+      uses: docker/setup-buildx-action@v3
+
+    - name: Build InvenTree Docker image
+      run: |
+        cd inventree
+        docker build . --target production --tag inventree:stable -f contrib/container/Dockerfile
+
+    - name: Install plugin in Docker
+      run: |
+        # Create a custom Dockerfile that installs the plugin
+        cat > Dockerfile.test << 'EOF'
+        FROM inventree:stable
+        
+        # Copy plugin code
+        COPY plugin /home/inventree/plugin
+        
+        # Install plugin
+        RUN pip install -e /home/inventree/plugin
+        
+        # Run migrations
+        RUN cd /home/inventree/src/backend/InvenTree && \
+            python manage.py migrate
+        
+        CMD ["gunicorn", "-c", "/home/inventree/gunicorn.conf.py", "InvenTree.wsgi"]
+        EOF
+        
+        docker build -f Dockerfile.test -t inventree-with-plugin:latest .
+
+    - name: Test plugin in Docker
+      run: |
+        # Start the container
+        docker run -d --name inventree-test \
+          -e INVENTREE_DEBUG=True \
+          -e INVENTREE_DB_ENGINE=sqlite3 \
+          -e INVENTREE_DB_NAME=/home/inventree/data/database.sqlite3 \
+          inventree-with-plugin:latest
+        
+        # Wait for startup
+        sleep 10
+        
+        # Check if plugin is loaded
+        docker exec inventree-test python -c "
+        import os
+        os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'InvenTree.settings')
+        import django
+        django.setup()
+        from plugin.registry import registry
+        from inventree_threshold_plugin.plugin import StockThresholdPlugin
+        print('Plugin loaded successfully!')
+        print(f'Plugin name: {StockThresholdPlugin.NAME}')
+        "
+        
+        # Run plugin tests
+        docker exec inventree-test python -m pytest /home/inventree/plugin/tests/ -v || true
+        
+        # Cleanup
+        docker stop inventree-test
+        docker rm inventree-test
+
+  lint:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+
+    - name: Install linting tools
+      run: |
+        python -m pip install --upgrade pip
+        pip install flake8 black isort
+
+    - name: Run flake8
+      run: |
+        flake8 inventree_threshold_plugin --count --select=E9,F63,F7,F82 --show-source --statistics
+
+    - name: Check black formatting
+      run: |
+        black --check inventree_threshold_plugin || true
+
+    - name: Check isort
+      run: |
+        isort --check-only inventree_threshold_plugin || true

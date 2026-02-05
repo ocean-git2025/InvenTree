@@ -1,0 +1,4 @@
+include README.md
+include LICENSE
+recursive-include inventree_threshold_plugin/static *
+recursive-include inventree_threshold_plugin/migrations *

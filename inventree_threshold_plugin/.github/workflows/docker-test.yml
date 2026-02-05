@@ -1,0 +1,74 @@
+name: Docker Test
+
+on:
+  schedule:
+    # Run daily at 2 AM UTC to test against latest InvenTree
+    - cron: '0 2 * * *'
+  workflow_dispatch:
+
+jobs:
+  test-against-latest:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout plugin
+      uses: actions/checkout@v4
+      with:
+        path: plugin
+
+    - name: Pull latest InvenTree Docker image
+      run: |
+        docker pull inventree/inventree:latest
+
+    - name: Create test environment
+      run: |
+        # Create docker-compose override file
+        cat > docker-compose.override.yml << 'EOF'
+        services:
+          inventree-server:
+            image: inventree/inventree:latest
+            volumes:
+              - ./plugin:/home/inventree/plugin:ro
+            environment:
+              - INVENTREE_PLUGINS_ENABLED=True
+            command: |
+              sh -c "pip install -e /home/inventree/plugin && 
+                     invoke update && 
+                     gunicorn -c /home/inventree/gunicorn.conf.py InvenTree.wsgi"
+        EOF
+
+    - name: Test plugin installation
+      run: |
+        # Start InvenTree with plugin
+        docker compose -f docker-compose.override.yml up -d inventree-server
+        
+        # Wait for startup
+        sleep 30
+        
+        # Check plugin is loaded
+        docker compose -f docker-compose.override.yml exec -T inventree-server python -c "
+        import os
+        os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'InvenTree.settings')
+        import django
+        django.setup()
+        from plugin.registry import registry
+        plugins = [p.NAME for p in registry.plugins.values()]
+        print('Loaded plugins:', plugins)
+        assert 'StockThresholdPlugin' in plugins, 'Plugin not loaded!'
+        print('SUCCESS: Plugin loaded correctly!')
+        "
+
+    - name: Run migrations
+      run: |
+        docker compose -f docker-compose.override.yml exec -T inventree-server \
+          invoke update
+
+    - name: Run tests
+      run: |
+        docker compose -f docker-compose.override.yml exec -T inventree-server \
+          python -m pytest /home/inventree/plugin/tests/ -v
+
+    - name: Cleanup
+      if: always()
+      run: |
+        docker compose -f docker-compose.override.yml down -v
