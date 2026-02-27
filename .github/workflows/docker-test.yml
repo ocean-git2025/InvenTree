@@ -1,0 +1,182 @@
+# GitHub Actions workflow for testing Stock Threshold Plugin
+# Tests against InvenTree latest Docker image and stable branch
+
+name: Stock Threshold Plugin Tests
+
+on:
+  push:
+    branches:
+      - main
+      - master
+      - stable
+    paths:
+      - 'stock_threshold_plugin/**'
+      - '.github/workflows/docker-test.yml'
+  pull_request:
+    branches:
+      - main
+      - master
+      - stable
+    paths:
+      - 'stock_threshold_plugin/**'
+      - '.github/workflows/docker-test.yml'
+  workflow_dispatch:
+
+env:
+  python_version: '3.11'
+
+permissions:
+  contents: read
+
+jobs:
+  # Test against latest Docker image
+  test-docker-latest:
+    name: Test against latest Docker image
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout Plugin Code
+        uses: actions/checkout@v4
+
+      - name: Pull InvenTree Latest Image
+        run: docker pull inventree/inventree:latest
+
+      - name: Create Plugin Package
+        run: |
+          mkdir -p plugin_package
+          cp -r stock_threshold_plugin plugin_package/
+
+      - name: Create Dockerfile for Plugin Test
+        run: |
+          cat > Dockerfile.plugin << 'EOF'
+          FROM inventree/inventree:latest
+          
+          USER root
+          
+          # Copy plugin to the plugins directory
+          COPY plugin_package/stock_threshold_plugin /home/inventree/src/backend/InvenTree/plugins/custom/stock_threshold_plugin/
+          
+          # Set ownership
+          RUN chown -R inventree:inventree /home/inventree/src/backend/InvenTree/plugins/custom/
+          
+          USER inventree
+          
+          WORKDIR /home/inventree
+          EOF
+
+      - name: Build Test Image
+        run: docker build -t inventree-plugin-test -f Dockerfile.plugin .
+
+      - name: Run Plugin Tests
+        run: |
+          docker run --rm \
+            -e INVENTREE_DB_ENGINE=sqlite3 \
+            -e INVENTREE_DB_NAME=/tmp/inventree_test.db \
+            -e INVENTREE_PLUGINS_ENABLED=true \
+            -e INVENTREE_DEBUG=true \
+            -e INVENTREE_SITE_URL=http://localhost:8000 \
+            inventree-plugin-test \
+            sh -c "cd /home/inventree/src/backend && python manage.py migrate --run-syncdb && python manage.py test stock_threshold_plugin.tests --verbosity=2"
+
+  # Test against stable branch source
+  test-stable-source:
+    name: Test against stable branch (source)
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout Plugin Code
+        uses: actions/checkout@v4
+
+      - name: Checkout InvenTree Stable Branch
+        uses: actions/checkout@v4
+        with:
+          repository: inventree/InvenTree
+          ref: stable
+          path: inventree
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.python_version }}
+          cache: 'pip'
+
+      - name: Install System Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gettext poppler-utils
+
+      - name: Install Python Dependencies
+        run: |
+          cd inventree
+          pip install -r src/backend/requirements.txt
+          pip install -r src/backend/requirements-dev.txt
+
+      - name: Copy Plugin to InvenTree
+        run: |
+          mkdir -p inventree/src/backend/InvenTree/plugins/custom/stock_threshold_plugin
+          cp -r stock_threshold_plugin/* inventree/src/backend/InvenTree/plugins/custom/stock_threshold_plugin/
+
+      - name: Run Plugin Tests
+        env:
+          INVENTREE_DB_ENGINE: sqlite3
+          INVENTREE_DB_NAME: /tmp/inventree_test.db
+          INVENTREE_PLUGINS_ENABLED: "true"
+          INVENTREE_DEBUG: "true"
+          INVENTREE_SITE_URL: http://localhost:8000
+        run: |
+          cd inventree/src/backend
+          python manage.py migrate --run-syncdb
+          python manage.py test stock_threshold_plugin.tests --verbosity=2
+
+  # Code quality checks
+  lint:
+    name: Code Quality
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.python_version }}
+
+      - name: Install Linting Tools
+        run: |
+          pip install flake8 black isort
+
+      - name: Run Black
+        run: |
+          black --check stock_threshold_plugin/ || true
+
+      - name: Run isort
+        run: |
+          isort --check-only stock_threshold_plugin/ || true
+
+      - name: Run Flake8
+        run: |
+          flake8 stock_threshold_plugin/ --max-line-length=120 --ignore=E501,W503 || true
+
+  # Test plugin installation
+  test-install:
+    name: Test Plugin Installation
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout Plugin Code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.python_version }}
+
+      - name: Install Plugin
+        run: |
+          cd stock_threshold_plugin
+          pip install -e .
+
+      - name: Verify Plugin Import
+        run: |
+          python -c "from stock_threshold_plugin import StockThresholdPlugin; print(f'Plugin: {StockThresholdPlugin.NAME}, Version: {StockThresholdPlugin.VERSION}')"
