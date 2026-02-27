@@ -1,0 +1,258 @@
+name: Plugin Docker Test
+
+on:
+  push:
+    branches:
+      - main
+      - master
+      - stable
+    paths:
+      - 'stock_threshold_plugin/**'
+      - '.github/workflows/docker-test.yml'
+  pull_request:
+    branches:
+      - main
+      - master
+      - stable
+    paths:
+      - 'stock_threshold_plugin/**'
+      - '.github/workflows/docker-test.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test-plugin:
+    name: Test Plugin with Latest Docker Image
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out plugin repository
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          path: plugin-repo
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Pull latest InvenTree image
+        run: docker pull inventree/inventree:latest
+
+      - name: Create test directory structure
+        run: |
+          mkdir -p inventree-test/plugins
+          cp -r plugin-repo/stock_threshold_plugin inventree-test/plugins/
+
+      - name: Create test configuration
+        run: |
+          cat > inventree-test/docker-compose.yml << 'EOF'
+          version: "3.8"
+
+          services:
+            inventree-dev-server:
+              image: inventree/inventree:latest
+              container_name: inventree-test-server
+              ports:
+                - "8000:8000"
+              volumes:
+                - ./plugins:/home/inventree/data/plugins
+                - ./config.yaml:/home/inventree/data/config.yaml
+              environment:
+                - INVENTREE_DB_ENGINE=sqlite3
+                - INVENTREE_DB_NAME=/home/inventree/data/inventree_db.sqlite3
+                - INVENTREE_DEBUG=true
+                - INVENTREE_PLUGINS_ENABLED=true
+                - INVENTREE_SECRET_KEY=test-secret-key-for-plugin-testing
+              restart: unless-stopped
+              command: invoke server
+          EOF
+
+          cat > inventree-test/config.yaml << 'EOF'
+          ---
+          secret_key: test-secret-key-for-plugin-testing
+          debug: true
+          plugins_enabled: true
+          plugins_apps:
+            - stock_threshold_plugin
+          allowed_hosts:
+            - "*"
+          database:
+            ENGINE: django.db.backends.sqlite3
+            NAME: /home/inventree/data/inventree_db.sqlite3
+          EOF
+
+      - name: Start InvenTree container
+        run: |
+          cd inventree-test
+          docker-compose up -d
+          sleep 30
+
+      - name: Wait for server to be ready
+        run: |
+          for i in {1..30}; do
+            if curl -s http://localhost:8000/api/ > /dev/null 2>&1; then
+              echo "Server is ready"
+              break
+            fi
+            echo "Waiting for server... (attempt $i)"
+            sleep 5
+          done
+
+      - name: Check plugin installation
+        run: |
+          cd inventree-test
+          docker-compose exec -T inventree-dev-server python manage.py shell -c "
+          try:
+              from stock_threshold_plugin.plugin import StockThresholdPlugin
+              from plugin.mixins import SettingsMixin, UserInterfaceMixin, APIMixin
+              from plugin import InvenTreePlugin
+              assert issubclass(StockThresholdPlugin, InvenTreePlugin)
+              print('✓ StockThresholdPlugin class found')
+              print('✓ Base classes inherited correctly')
+              plugin = StockThresholdPlugin()
+              print(f'✓ Plugin name: {plugin.NAME}')
+              print(f'✓ Plugin slug: {plugin.SLUG}')
+              print('✓ Plugin instantiation successful')
+          except ImportError as e:
+              print(f'✗ Import error: {e}')
+              exit(1)
+          except Exception as e:
+              print(f'✗ Error: {e}')
+              exit(1)
+          "
+
+      - name: Test plugin mixins
+        run: |
+          cd inventree-test
+          docker-compose exec -T inventree-dev-server python manage.py shell -c "
+          from stock_threshold_plugin.plugin import StockThresholdPlugin
+          plugin = StockThresholdPlugin()
+          
+          # Test SettingsMixin
+          assert hasattr(plugin, 'SETTINGS'), 'SettingsMixin not working'
+          assert 'DEFAULT_THRESHOLD' in plugin.SETTINGS, 'DEFAULT_THRESHOLD setting not found'
+          print('✓ SettingsMixin working')
+          
+          # Test UserInterfaceMixin
+          assert hasattr(plugin, 'get_ui_panels'), 'UserInterfaceMixin not working'
+          panels = plugin.get_ui_panels(None, {})
+          assert isinstance(panels, list), 'get_ui_panels should return list'
+          print(f'✓ UserInterfaceMixin working ({len(panels)} panels)')
+          
+          # Test APIMixin
+          assert hasattr(plugin, 'get_api_urls'), 'APIMixin not working'
+          urls = plugin.get_api_urls()
+          assert isinstance(urls, list), 'get_api_urls should return list'
+          print(f'✓ APIMixin working ({len(urls)} URLs)')
+          "
+
+      - name: Test threshold functionality
+        run: |
+          cd inventree-test
+          docker-compose exec -T inventree-dev-server python manage.py shell -c "
+          from stock_threshold_plugin.plugin import StockThresholdPlugin
+          from stock.models import StockItem
+          
+          plugin = StockThresholdPlugin()
+          
+          # Create a test stock item
+          from part.models import Part
+          from stock.models import StockLocation
+          
+          # Get or create test data
+          part, _ = Part.objects.get_or_create(
+              name='Test Part for Plugin',
+              defaults={
+                  'description': 'Test part',
+                  'active': True,
+                  'assembly': False,
+                  'purchaseable': True,
+                  'salable': True,
+              }
+          )
+          
+          location, _ = StockLocation.objects.get_or_create(
+              name='Test Location',
+              defaults={'description': 'Test location'}
+          )
+          
+          # Create stock item with quantity below default threshold
+          stock_item, created = StockItem.objects.get_or_create(
+              part=part,
+              location=location,
+              defaults={
+                  'quantity': 5,
+                  'active': True,
+              }
+          )
+          
+          if not created:
+              stock_item.quantity = 5
+              stock_item.save()
+          
+          # Test threshold retrieval
+          default_threshold = plugin.get_stock_threshold(stock_item)
+          print(f'✓ Default threshold: {default_threshold}')
+          assert default_threshold == 10, f'Expected default threshold 10, got {default_threshold}'
+          
+          # Test below threshold check
+          is_low = plugin.is_below_threshold(stock_item)
+          print(f'✓ Below threshold: {is_low} (quantity: {stock_item.quantity})')
+          assert is_low, 'Stock item should be below threshold'
+          
+          # Test custom metadata threshold
+          stock_item.set_metadata('stock_threshold', 3)
+          custom_threshold = plugin.get_stock_threshold(stock_item)
+          print(f'✓ Custom threshold: {custom_threshold}')
+          assert custom_threshold == 3, f'Expected custom threshold 3, got {custom_threshold}'
+          
+          # Test not below custom threshold
+          is_low_custom = plugin.is_below_threshold(stock_item)
+          print(f'✓ Below custom threshold (3): {is_low_custom}')
+          assert not is_low_custom, 'Should not be below custom threshold of 3'
+          
+          print('✓ All functionality tests passed!')
+          "
+
+      - name: Test API endpoint
+        run: |
+          cd inventree-test
+          docker-compose exec -T inventree-dev-server python manage.py shell -c "
+          from stock_threshold_plugin.api import ThresholdCheckAPI
+          from rest_framework.test import APIRequestFactory
+          from django.contrib.auth import get_user_model
+          
+          User = get_user_model()
+          user, _ = User.objects.get_or_create(
+              username='testuser',
+              defaults={'is_active': True, 'is_staff': True}
+          )
+          
+          factory = APIRequestFactory()
+          view = ThresholdCheckAPI.as_view()
+          
+          request = factory.get('/plugin/stock-threshold/threshold-check/')
+          request.user = user
+          
+          response = view(request)
+          print(f'✓ API Response status: {response.status_code}')
+          print(f'✓ API Response data: {response.data}')
+          assert 'low_stock_ids' in response.data, 'Response should contain low_stock_ids'
+          assert 'count' in response.data, 'Response should contain count'
+          print('✓ API endpoint working!')
+          "
+
+      - name: Check static files
+        run: |
+          cd inventree-test
+          ls -la plugins/stock_threshold_plugin/
+          ls -la plugins/stock_threshold_plugin/static/plugins/stock_threshold/
+
+      - name: Stop and cleanup
+        if: always()
+        run: |
+          cd inventree-test
+          docker-compose down -v || true
+          docker rm -f inventree-test-server || true
